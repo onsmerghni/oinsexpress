@@ -3,78 +3,134 @@ package com.oinsexpress.service;
 import com.oinsexpress.dto.TrackingDtos.PositionRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Service de détection d'anomalies via le modèle XGBoost (Python).
- * Pour des raisons de performance, on utilise un seuil simple en plus
- * pour éviter d'invoquer Python à chaque requête.
+ * OINSExpress — Service de détection d'anomalies IMU
+ * =====================================================
+ * Appelle le microservice Flask XGBoost pour classifier
+ * le comportement de conduite en temps réel.
+ *
+ * Modèle XGBoost binaire (NORMAL / AGGRESSIVE)
+ *   - Accuracy : 86.7%    - AUC : 0.951
+ *   - Seuil WARNING  : P(AGGRESSIVE) >= 0.50  → RISKY
+ *   - Seuil CRITICAL : P(AGGRESSIVE) >= 0.95  → AGGRESSIVE
+ *
+ * Features principales (top 3) :
+ *   1. GyroZ_roll_mean (18.8%)
+ *   2. GyroZ_roll_min  (10.1%)
+ *   3. AccY_roll_max   ( 5.0%)
  */
 @Service
 @Slf4j
 public class AnomalyDetectionService {
 
-    @Value("${oinsexpress.ml.python-script}")
-    private String pythonScript;
+    @Value("${oinsexpress.ml.api-url:https://oinsexpress-ia.onrender.com}")
+    private String mlApiUrl;
 
-    // Seuils empiriques (ajustables après entraînement)
-    private static final double ACC_THRESHOLD = 15.0; // m/s²
-    private static final double GYR_THRESHOLD = 250.0; // deg/s
+    private final RestTemplate restTemplate = new RestTemplate();
 
-    public boolean isAnomaly(PositionRequest req) {
-        // Filtre rapide par seuil
-        double accMagnitude = Math.sqrt(
-            sq(req.getAccX()) + sq(req.getAccY()) + sq(req.getAccZ())
-        );
-        double gyrMagnitude = Math.sqrt(
-            sq(req.getGyrX()) + sq(req.getGyrY()) + sq(req.getGyrZ())
-        );
+    /**
+     * Résultat de la classification IA.
+     */
+    public record AnomalyResult(
+        boolean anomaly,
+        String  drivingState,   // NORMAL | RISKY | AGGRESSIVE
+        String  severity,       // NONE   | MEDIUM | HIGH
+        String  message,
+        double  proba
+    ) {}
 
-        if (accMagnitude > ACC_THRESHOLD || gyrMagnitude > GYR_THRESHOLD) {
-            log.info("Anomalie détectée par seuil — acc={}, gyr={}", accMagnitude, gyrMagnitude);
-            return true;
+    /**
+     * Classifie le comportement de conduite via le microservice Flask XGBoost.
+     * Fallback automatique sur règles simples si le service est indisponible.
+     *
+     * @param req Position request contenant les données IMU (accX/Y/Z, gyrX/Y/Z)
+     * @return Résultat de classification avec état, sévérité et message
+     */
+    public AnomalyResult classify(PositionRequest req) {
+
+        // Pas de données IMU → pas d'analyse
+        if (req.getAccX() == null || req.getAccY() == null) {
+            return new AnomalyResult(false, "NORMAL", "NONE", "Pas de données IMU", 0.0);
         }
 
-        // Si activé, appel au modèle XGBoost
-        if (Files.exists(Paths.get(pythonScript))) {
-            return invokeXGBoost(req);
-        }
-
-        return false;
-    }
-
-    private boolean invokeXGBoost(PositionRequest req) {
         try {
-            ProcessBuilder pb = new ProcessBuilder(
-                "python3", pythonScript,
-                String.valueOf(req.getAccX()),
-                String.valueOf(req.getAccY()),
-                String.valueOf(req.getAccZ()),
-                String.valueOf(req.getGyrX()),
-                String.valueOf(req.getGyrY()),
-                String.valueOf(req.getGyrZ())
-            );
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
+            // ── Construire le body JSON ──
+            Map<String, Object> rawImu = new HashMap<>();
+            rawImu.put("accX", req.getAccX());
+            rawImu.put("accY", req.getAccY());
+            rawImu.put("accZ", req.getAccZ() != null ? req.getAccZ() : 9.8);
+            rawImu.put("gyrX", req.getGyrX() != null ? req.getGyrX() : 0.0);
+            rawImu.put("gyrY", req.getGyrY() != null ? req.getGyrY() : 0.0);
+            rawImu.put("gyrZ", req.getGyrZ() != null ? req.getGyrZ() : 0.0);
 
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
-                String line = reader.readLine();
-                process.waitFor();
-                return "ANOMALY".equalsIgnoreCase(line);
+            Map<String, Object> body = new HashMap<>();
+            body.put("livreurId", req.getLivreurId());
+            body.put("raw_imu",   rawImu);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+            // ── Appel Flask XGBoost ──
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                mlApiUrl + "/predict",
+                entity,
+                Map.class
+            );
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                Map<?, ?> result  = response.getBody();
+                boolean   alert   = Boolean.TRUE.equals(result.get("alert"));
+                String    state   = (String) result.getOrDefault("drivingState", "NORMAL");
+                String    sev     = (String) result.getOrDefault("severity",     "NONE");
+                String    msg     = (String) result.getOrDefault("message",      "");
+                double    proba   = result.get("proba") instanceof Number
+                                    ? ((Number) result.get("proba")).doubleValue()
+                                    : 0.0;
+
+                log.info("[IA XGBoost] {} → {} (sév={}, p={:.3f})",
+                    req.getLivreurId(), state, sev, proba);
+
+                return new AnomalyResult(alert, state, sev, msg, proba);
             }
+
         } catch (Exception e) {
-            log.error("Erreur appel XGBoost : {}", e.getMessage());
-            return false;
+            log.warn("[IA] Microservice Flask indisponible : {} → fallback règles simples", e.getMessage());
+            return classifyWithRules(req);
         }
+
+        return new AnomalyResult(false, "NORMAL", "NONE", "", 0.0);
     }
 
-    private double sq(Double v) {
-        return v == null ? 0 : v * v;
+    /**
+     * Fallback : règles simples basées sur les features les plus importantes.
+     *   - GyroZ_roll_mean : virage/dérapage
+     *   - AccY_roll_max   : freinage/accélération latérale
+     */
+    private AnomalyResult classifyWithRules(PositionRequest req) {
+        double ay = Math.abs(req.getAccY() != null ? req.getAccY() : 0);
+        double gz = Math.abs(req.getGyrZ() != null ? req.getGyrZ() : 0);
+
+        if (gz > 150 || ay > 2.5) {
+            return new AnomalyResult(true, "AGGRESSIVE", "HIGH",
+                "Conduite dangereuse (règles seuils — IA indisponible)", 0.99);
+        } else if (gz > 80 || ay > 1.5) {
+            return new AnomalyResult(true, "RISKY", "MEDIUM",
+                "Conduite risquée (règles seuils — IA indisponible)", 0.65);
+        }
+        return new AnomalyResult(false, "NORMAL", "NONE",
+            "Conduite normale", 0.10);
+    }
+
+    /** Rétrocompatibilité */
+    public boolean isAnomaly(PositionRequest req) {
+        return classify(req).anomaly();
     }
 }
