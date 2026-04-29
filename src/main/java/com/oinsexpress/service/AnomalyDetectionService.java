@@ -87,7 +87,7 @@ public class AnomalyDetectionService {
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 Map<?, ?> result  = response.getBody();
-                boolean   alert   = Boolean.TRUE.equals(result.get("alert"));
+                boolean alert = "AGGRESSIVE".equals(state) || "RISKY".equals(state);
                 String state = result.get("drivingState") != null
                         ? result.get("drivingState").toString() : "NORMAL";
                 String sev   = result.get("severity") != null
