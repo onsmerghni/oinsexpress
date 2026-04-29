@@ -1,19 +1,18 @@
 package com.oinsexpress.ml;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.ResponseEntity;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * MLService — Appel vers Flask IA (XGBoost)
- * URL : https://oinsexpress-ia.onrender.com/predict
- *
- * PFA 2026 — ISTIC
- * Mrabet Islem & Merghni Ons
+ * PFA 2026 — ISTIC | Mrabet Islem & Merghni Ons
  */
 @Service
 public class MLService {
@@ -22,16 +21,15 @@ public class MLService {
     private String mlApiUrl;
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * Envoie les données IMU au service Flask IA et retourne la prédiction.
-     *
-     * @return "NORMAL" ou "AGGRESSIVE" ou "UNKNOWN" si erreur
+     * Envoie les données IMU au Flask IA → retourne "NORMAL" ou "AGGRESSIVE"
      */
     public String predict(double ax, double ay, double az,
                           double gx, double gy, double gz) {
         try {
-            // ── Construire le corps JSON ──
+            // ── Corps JSON ──
             Map<String, Double> body = new HashMap<>();
             body.put("ax", ax);
             body.put("ay", ay);
@@ -40,15 +38,25 @@ public class MLService {
             body.put("gy", gy);
             body.put("gz", gz);
 
-            // ── Appeler Flask /predict ──
-            ResponseEntity<Map> response = restTemplate.postForEntity(
+            // ── Headers ──
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, Double>> request = new HttpEntity<>(body, headers);
+
+            // ── Appel Flask → réponse String brute ──
+            ResponseEntity<String> response = restTemplate.postForEntity(
                 mlApiUrl + "/predict",
-                body,
-                Map.class
+                request,
+                String.class
             );
 
-            if (response.getBody() != null && response.getBody().containsKey("prediction")) {
-                return (String) response.getBody().get("prediction");
+            // ── Parser le JSON manuellement ──
+            if (response.getBody() != null) {
+                JsonNode json = objectMapper.readTree(response.getBody());
+                if (json.has("prediction")) {
+                    return json.get("prediction").asText();
+                }
             }
 
             return "UNKNOWN";
@@ -60,15 +68,17 @@ public class MLService {
     }
 
     /**
-     * Retourne true si le service IA est disponible
+     * Vérifie que Flask IA est disponible
      */
     public boolean isHealthy() {
         try {
-            ResponseEntity<Map> response = restTemplate.getForEntity(
-                mlApiUrl + "/health", Map.class
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                mlApiUrl + "/health",
+                String.class
             );
             return response.getStatusCode().is2xxSuccessful();
         } catch (Exception e) {
+            System.err.println("[MLService] Health check failed : " + e.getMessage());
             return false;
         }
     }

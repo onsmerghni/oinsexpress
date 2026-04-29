@@ -88,15 +88,18 @@ public class AnomalyDetectionService {
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 Map<?, ?> result  = response.getBody();
                 boolean   alert   = Boolean.TRUE.equals(result.get("alert"));
-                String    state   = (String) result.getOrDefault("drivingState", "NORMAL");
-                String    sev     = (String) result.getOrDefault("severity",     "NONE");
-                String    msg     = (String) result.getOrDefault("message",      "");
+                String state = result.get("drivingState") != null
+                        ? result.get("drivingState").toString() : "NORMAL";
+                String sev   = result.get("severity") != null
+                        ? result.get("severity").toString() : "NONE";
+                String msg   = result.get("message") != null
+                        ? result.get("message").toString() : "";
                 double    proba   = result.get("proba") instanceof Number
                                     ? ((Number) result.get("proba")).doubleValue()
                                     : 0.0;
 
-                log.info("[IA XGBoost] {} → {} (sév={}, p={:.3f})",
-                    req.getLivreurId(), state, sev, proba);
+                log.info("[IA XGBoost] {} → {} (sev={}, proba={})",
+                        req.getLivreurId(), state, sev, proba);
 
                 return new AnomalyResult(alert, state, sev, msg, proba);
             }
