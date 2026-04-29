@@ -86,17 +86,16 @@ public class AnomalyDetectionService {
             );
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                Map<?, ?> result  = response.getBody();
-                boolean alert = "AGGRESSIVE".equals(state) || "RISKY".equals(state);
+                Map<?, ?> result = response.getBody();
                 String state = result.get("drivingState") != null
                         ? result.get("drivingState").toString() : "NORMAL";
-                String sev   = result.get("severity") != null
+                String sev = result.get("severity") != null
                         ? result.get("severity").toString() : "NONE";
-                String msg   = result.get("message") != null
+                String msg = result.get("message") != null
                         ? result.get("message").toString() : "";
-                double    proba   = result.get("proba") instanceof Number
-                                    ? ((Number) result.get("proba")).doubleValue()
-                                    : 0.0;
+                double proba = result.get("proba") instanceof Number
+                        ? ((Number) result.get("proba")).doubleValue() : 0.0;
+                boolean alert = "AGGRESSIVE".equals(state) || "RISKY".equals(state);
 
                 log.info("[IA XGBoost] {} → {} (sev={}, proba={})",
                         req.getLivreurId(), state, sev, proba);
