@@ -63,12 +63,12 @@ public class AnomalyDetectionService {
         try {
             // ── Construire le body JSON ──
             Map<String, Object> rawImu = new HashMap<>();
-            rawImu.put("accX", req.getAccX());
-            rawImu.put("accY", req.getAccY());
-            rawImu.put("accZ", req.getAccZ() != null ? req.getAccZ() : 9.8);
-            rawImu.put("gyrX", req.getGyrX() != null ? req.getGyrX() : 0.0);
-            rawImu.put("gyrY", req.getGyrY() != null ? req.getGyrY() : 0.0);
-            rawImu.put("gyrZ", req.getGyrZ() != null ? req.getGyrZ() : 0.0);
+            rawImu.put("ax", req.getAccX());
+            rawImu.put("ay", req.getAccY());
+            rawImu.put("az", req.getAccZ() != null ? req.getAccZ() : 9.8);
+            rawImu.put("gx", req.getGyrX() != null ? req.getGyrX() : 0.0);
+            rawImu.put("gy", req.getGyrY() != null ? req.getGyrY() : 0.0);
+            rawImu.put("gz", req.getGyrZ() != null ? req.getGyrZ() : 0.0);
 
             Map<String, Object> body = new HashMap<>();
             body.put("livreurId", req.getLivreurId());
