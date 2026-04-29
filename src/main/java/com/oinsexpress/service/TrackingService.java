@@ -28,31 +28,44 @@ public class TrackingService {
     private final AnomalyDetectionService anomalyDetection;
 
     @Transactional
-    public void recordPosition(PositionRequest req) {
-        Position position = Position.builder()
-            .livreurId(req.getLivreurId())
-            .latitude(req.getLatitude())
-            .longitude(req.getLongitude())
-            .speed(req.getSpeed())
-            .heading(req.getHeading())
-            .accuracy(req.getAccuracy())
-            .drivingState(req.getDrivingState() != null ? req.getDrivingState() : DrivingState.NORMAL)
-            .status(req.getStatus() != null ? req.getStatus() : LivreurStatus.ACTIVE)
-            .accX(req.getAccX()).accY(req.getAccY()).accZ(req.getAccZ())
-            .gyrX(req.getGyrX()).gyrY(req.getGyrY()).gyrZ(req.getGyrZ())
-            .recordedAt(LocalDateTime.now())
-            .build();
+public void recordPosition(PositionRequest req) {
 
-        positionRepository.save(position);
+    //  Appeler classify() et récupérer le vrai résultat IA
+    AnomalyDetectionService.AnomalyResult anomaly =
+        anomalyDetection.classify(req);
 
-        // Détection d'anomalie IMU
-        if (req.getAccX() != null && anomalyDetection.isAnomaly(req)) {
-            alertService.createImuAnomalyAlert(req);
-        }
-
-        // Diffusion en temps réel via WebSocket
-        broadcastPosition(position, req);
+    // Convertir String → DrivingState enum
+    DrivingState drivingState;
+    try {
+        drivingState = DrivingState.valueOf(anomaly.drivingState());
+    } catch (Exception e) {
+        drivingState = DrivingState.NORMAL;
     }
+
+    Position position = Position.builder()
+        .livreurId(req.getLivreurId())
+        .latitude(req.getLatitude())
+        .longitude(req.getLongitude())
+        .speed(req.getSpeed())
+        .heading(req.getHeading())
+        .accuracy(req.getAccuracy())
+        .drivingState(drivingState)          //  vient de l'IA maintenant
+        .status(req.getStatus() != null ? req.getStatus() : LivreurStatus.ACTIVE)
+        .accX(req.getAccX()).accY(req.getAccY()).accZ(req.getAccZ())
+        .gyrX(req.getGyrX()).gyrY(req.getGyrY()).gyrZ(req.getGyrZ())
+        .recordedAt(LocalDateTime.now())
+        .build();
+
+    positionRepository.save(position);
+
+    //  Créer alerte si anomalie détectée
+    if (anomaly.anomaly()) {
+        alertService.createImuAnomalyAlert(req);
+    }
+
+    // Diffusion WebSocket
+    broadcastPosition(position, req);
+}
 
     public List<LivreurPositionDto> getAllLatestPositions() {
         LocalDateTime since = LocalDateTime.now().minusHours(24);
