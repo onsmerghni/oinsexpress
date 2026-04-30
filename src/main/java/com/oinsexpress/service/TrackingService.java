@@ -65,11 +65,7 @@ public void recordPosition(PositionRequest req) {
             ? "🔴 Conduite dangereuse !"
             : "🟡 Conduite risquée";
 
-        String body = String.format("Livreur %s — %s",
-            req.getLivreurId(),
-            "AGGRESSIVE".equals(anomaly.drivingState())
-                ? "Intervention urgente !"
-                : "Surveillance recommandée");
+        String body = String.format("Livreur %s", req.getLivreurId());
 
         webPushService.sendToAllBosses(title, body, "/boss/map");
     }
