@@ -26,15 +26,14 @@ public class TrackingService {
     private final SimpMessagingTemplate messagingTemplate;
     private final AlertService alertService;
     private final AnomalyDetectionService anomalyDetection;
+    private final WebPushService webPushService;
 
-    @Transactional
+   @Transactional
 public void recordPosition(PositionRequest req) {
 
-    //  Appeler classify() et récupérer le vrai résultat IA
     AnomalyDetectionService.AnomalyResult anomaly =
         anomalyDetection.classify(req);
 
-    // Convertir String → DrivingState enum
     DrivingState drivingState;
     try {
         drivingState = DrivingState.valueOf(anomaly.drivingState());
@@ -49,7 +48,7 @@ public void recordPosition(PositionRequest req) {
         .speed(req.getSpeed())
         .heading(req.getHeading())
         .accuracy(req.getAccuracy())
-        .drivingState(drivingState)          //  vient de l'IA maintenant
+        .drivingState(drivingState)
         .status(req.getStatus() != null ? req.getStatus() : LivreurStatus.ACTIVE)
         .accX(req.getAccX()).accY(req.getAccY()).accZ(req.getAccZ())
         .gyrX(req.getGyrX()).gyrY(req.getGyrY()).gyrZ(req.getGyrZ())
@@ -58,12 +57,23 @@ public void recordPosition(PositionRequest req) {
 
     positionRepository.save(position);
 
-    //  Créer alerte si anomalie détectée
     if (anomaly.anomaly()) {
         alertService.createImuAnomalyAlert(req);
+
+        // ✅ ENVOI PUSH NOTIFICATION FOND D'ECRAN
+        String title = "AGGRESSIVE".equals(anomaly.drivingState())
+            ? "🔴 Conduite dangereuse !"
+            : "🟡 Conduite risquée";
+
+        String body = String.format("Livreur %s — %s",
+            req.getLivreurId(),
+            "AGGRESSIVE".equals(anomaly.drivingState())
+                ? "Intervention urgente !"
+                : "Surveillance recommandée");
+
+        webPushService.sendToAllBosses(title, body, "/boss/map");
     }
 
-    // Diffusion WebSocket
     broadcastPosition(position, req);
 }
 
