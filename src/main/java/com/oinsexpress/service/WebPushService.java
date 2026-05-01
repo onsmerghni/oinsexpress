@@ -13,9 +13,11 @@ import nl.martijndwars.webpush.Subscription;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.Security;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -41,13 +43,18 @@ public class WebPushService {
         try {
             Security.addProvider(new BouncyCastleProvider());
             pushService = new PushService(vapidPublicKey, vapidPrivateKey, vapidSubject);
-            log.info("[WebPush] Service initialise avec cles VAPID");
+            log.info("[WebPush] Service initialisé avec clés VAPID");
         } catch (Exception e) {
             log.error("[WebPush] Erreur init: {}", e.getMessage());
         }
     }
 
-    public void saveSubscription(java.util.UUID userId, String endpoint, String p256dh, String auth) {
+    @Transactional
+    public void saveSubscription(UUID userId, String endpoint, String p256dh, String auth) {
+        // ✅ Supprimer TOUS les anciens abonnements → garder 1 seul par boss
+        subscriptionRepo.deleteByUserId(userId);
+        subscriptionRepo.flush();
+
         PushSubscriptionEntity sub = PushSubscriptionEntity.builder()
             .userId(userId)
             .endpoint(endpoint)
@@ -55,11 +62,12 @@ public class WebPushService {
             .auth(auth)
             .build();
         subscriptionRepo.save(sub);
-        log.info("[WebPush] Abonnement enregistre pour user {}", userId);
+        log.info("[WebPush] Abonnement enregistré pour user {} (anciens supprimés)", userId);
     }
 
-    public void sendToBoss(java.util.UUID bossId, String title, String body, String url) {
+    public void sendToBoss(UUID bossId, String title, String body, String url) {
         List<PushSubscriptionEntity> subs = subscriptionRepo.findByUserId(bossId);
+        log.info("[WebPush] Envoi à boss {} — {} abonnement(s)", bossId, subs.size());
         for (PushSubscriptionEntity sub : subs) {
             sendNotification(sub, title, body, url);
         }
@@ -90,12 +98,12 @@ public class WebPushService {
 
             Notification notification = new Notification(subscription, payload);
             pushService.send(notification);
-            log.info("[WebPush] Notification envoyee a {}", sub.getEndpoint());
+            log.info("[WebPush] ✅ Notification envoyée à {}", sub.getEndpoint().substring(0, 50) + "...");
         } catch (Exception e) {
             log.error("[WebPush] Erreur envoi: {}", e.getMessage());
-            // Si endpoint invalide → supprimer
             if (e.getMessage() != null && e.getMessage().contains("410")) {
                 subscriptionRepo.deleteByEndpoint(sub.getEndpoint());
+                log.info("[WebPush] Abonnement expiré supprimé");
             }
         }
     }
