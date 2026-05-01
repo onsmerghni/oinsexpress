@@ -34,7 +34,7 @@ public class EmailService {
             
             ---
             L'équipe OINSExpress
-            PFA 2026 — ISTIC
+            PFA 2026 — FST
             """, firstName, code);
 
         sendEmail(to, subject, body);
