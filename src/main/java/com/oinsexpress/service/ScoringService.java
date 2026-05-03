@@ -1,6 +1,7 @@
 package com.oinsexpress.service;
 
 import com.oinsexpress.dto.LivreurScoreDto;
+import com.oinsexpress.entity.DrivingState;
 import com.oinsexpress.entity.User;
 import com.oinsexpress.repository.AlertRepository;
 import com.oinsexpress.repository.ClientFeedbackRepository;
@@ -25,7 +26,7 @@ public class ScoringService {
     private final UserRepository           userRepository;
     private final PositionRepository       positionRepository;
     private final AlertRepository          alertRepository;
-    private final ClientFeedbackRepository feedbackRepository; // ✅ nom correct
+    private final ClientFeedbackRepository feedbackRepository;
 
     private static final double POIDS_CONDUITE = 0.35;
     private static final double POIDS_AVIS     = 0.35;
@@ -36,21 +37,18 @@ public class ScoringService {
         List<User> livreurs = userRepository.findByBossId(bossId);
         if (livreurs.isEmpty()) return List.of();
 
-        LocalDateTime depuis       = LocalDateTime.now().minusMonths(mois);
+        LocalDateTime depuis        = LocalDateTime.now().minusMonths(mois);
         LocalDateTime semainePassee = LocalDateTime.now().minusWeeks(1);
 
         List<LivreurScoreDto> scores = new ArrayList<>();
-
         for (User livreur : livreurs) {
             if (!"LIVREUR".equals(livreur.getRole().name())) continue;
             scores.add(calculerScore(livreur, depuis, semainePassee));
         }
 
         scores.sort(Comparator.comparingDouble(LivreurScoreDto::getScoreFinal).reversed());
-
         AtomicInteger rang = new AtomicInteger(1);
         scores.forEach(s -> s.setRang(rang.getAndIncrement()));
-
         return scores;
     }
 
@@ -59,11 +57,11 @@ public class ScoringService {
                                           LocalDateTime semainePassee) {
         String lid = livreur.getLivreurId();
 
-        // ── 1. Score conduite ──
+        // ── 1. Score conduite ── ✅ utilise DrivingState enum
         long totalPos  = countPositions(lid, depuis);
-        long normalPos = countPositionsByState(lid, depuis, "NORMAL");
-        long riskyPos  = countPositionsByState(lid, depuis, "RISKY");
-        long aggrPos   = countPositionsByState(lid, depuis, "AGGRESSIVE");
+        long normalPos = countPositionsByState(lid, depuis, DrivingState.NORMAL);
+        long riskyPos  = countPositionsByState(lid, depuis, DrivingState.RISKY);
+        long aggrPos   = countPositionsByState(lid, depuis, DrivingState.AGGRESSIVE);
 
         double scoreConduite = 100.0;
         if (totalPos > 0) {
@@ -100,7 +98,7 @@ public class ScoringService {
                           + scoreAlertes  * POIDS_ALERTES;
         scoreFinal = Math.round(scoreFinal * 10.0) / 10.0;
 
-        // ── Évolution semaine passée ──
+        // ── Évolution ──
         double scoreSemPassee = calculerScoreSimple(lid, semainePassee,
             LocalDateTime.now().minusWeeks(2));
         double evolution = Math.round((scoreFinal - scoreSemPassee) * 10.0) / 10.0;
@@ -110,10 +108,10 @@ public class ScoringService {
 
         // ── Badge ──
         String badge, badgeColor;
-        if      (scoreFinal >= 80) { badge = "EXCELLENT";    badgeColor = "#10B981"; }
-        else if (scoreFinal >= 65) { badge = "BON";          badgeColor = "#3B82F6"; }
-        else if (scoreFinal >= 50) { badge = "MOYEN";        badgeColor = "#F59E0B"; }
-        else                       { badge = "A AMELIORER";  badgeColor = "#EF4444"; }
+        if      (scoreFinal >= 80) { badge = "EXCELLENT";   badgeColor = "#10B981"; }
+        else if (scoreFinal >= 65) { badge = "BON";         badgeColor = "#3B82F6"; }
+        else if (scoreFinal >= 50) { badge = "MOYEN";       badgeColor = "#F59E0B"; }
+        else                       { badge = "A AMELIORER"; badgeColor = "#EF4444"; }
 
         return LivreurScoreDto.builder()
             .livreurId(lid)
@@ -139,21 +137,23 @@ public class ScoringService {
             .build();
     }
 
+    // ── Score simplifié pour comparaison ── ✅ DrivingState enum
     private double calculerScoreSimple(String lid, LocalDateTime debut, LocalDateTime fin) {
         try {
             long total  = positionRepository.countByLivreurIdAndRecordedAtBetween(lid, debut, fin);
             long normal = positionRepository.countByLivreurIdAndDrivingStateAndRecordedAtBetween(
-                lid, "NORMAL", debut, fin);
+                lid, DrivingState.NORMAL, debut, fin);
             return total == 0 ? 50.0 : (double) normal / total * 100.0;
         } catch (Exception e) { return 50.0; }
     }
 
+    // ── Helpers ──
     private long countPositions(String lid, LocalDateTime depuis) {
         try { return positionRepository.countByLivreurIdAndRecordedAtAfter(lid, depuis); }
         catch (Exception e) { return 0L; }
     }
 
-    private long countPositionsByState(String lid, LocalDateTime depuis, String state) {
+    private long countPositionsByState(String lid, LocalDateTime depuis, DrivingState state) {
         try { return positionRepository
                 .countByLivreurIdAndDrivingStateAndRecordedAtAfter(lid, state, depuis); }
         catch (Exception e) { return 0L; }

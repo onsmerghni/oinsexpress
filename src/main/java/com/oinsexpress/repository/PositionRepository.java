@@ -1,5 +1,6 @@
 package com.oinsexpress.repository;
 
+import com.oinsexpress.entity.DrivingState;
 import com.oinsexpress.entity.Position;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -27,26 +28,26 @@ public interface PositionRepository extends JpaRepository<Position, UUID> {
     List<String> findActiveLivreursSince(@Param("since") LocalDateTime since);
 
     // ═══════════════════════════════════════════════════════════
-    // SCORING IA — Méthodes ajoutées
+    // SCORING IA
     // ═══════════════════════════════════════════════════════════
 
     /** Compter toutes les positions d'un livreur depuis une date */
     long countByLivreurIdAndRecordedAtAfter(String livreurId, LocalDateTime since);
 
-    /** Compter positions par état (NORMAL/RISKY/AGGRESSIVE) depuis une date */
+    /** Compter positions par état depuis une date — ✅ DrivingState enum */
     long countByLivreurIdAndDrivingStateAndRecordedAtAfter(
-        String livreurId, String drivingState, LocalDateTime since);
+        String livreurId, DrivingState drivingState, LocalDateTime since);
 
     /** Compter positions entre 2 dates */
     long countByLivreurIdAndRecordedAtBetween(
         String livreurId, LocalDateTime start, LocalDateTime end);
 
-    /** Compter positions par état entre 2 dates */
+    /** Compter positions par état entre 2 dates — ✅ DrivingState enum */
     long countByLivreurIdAndDrivingStateAndRecordedAtBetween(
-        String livreurId, String drivingState,
+        String livreurId, DrivingState drivingState,
         LocalDateTime start, LocalDateTime end);
 
-    /** Compter jours distincts de connexion d'un livreur depuis une date */
+    /** Compter jours distincts de connexion */
     @Query("SELECT COUNT(DISTINCT FUNCTION('DATE', p.recordedAt)) " +
            "FROM Position p " +
            "WHERE p.livreurId = :livreurId " +
