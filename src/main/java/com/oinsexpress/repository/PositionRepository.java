@@ -25,4 +25,33 @@ public interface PositionRepository extends JpaRepository<Position, UUID> {
 
     @Query("SELECT DISTINCT p.livreurId FROM Position p WHERE p.recordedAt > :since")
     List<String> findActiveLivreursSince(@Param("since") LocalDateTime since);
+
+    // ═══════════════════════════════════════════════════════════
+    // SCORING IA — Méthodes ajoutées
+    // ═══════════════════════════════════════════════════════════
+
+    /** Compter toutes les positions d'un livreur depuis une date */
+    long countByLivreurIdAndRecordedAtAfter(String livreurId, LocalDateTime since);
+
+    /** Compter positions par état (NORMAL/RISKY/AGGRESSIVE) depuis une date */
+    long countByLivreurIdAndDrivingStateAndRecordedAtAfter(
+        String livreurId, String drivingState, LocalDateTime since);
+
+    /** Compter positions entre 2 dates */
+    long countByLivreurIdAndRecordedAtBetween(
+        String livreurId, LocalDateTime start, LocalDateTime end);
+
+    /** Compter positions par état entre 2 dates */
+    long countByLivreurIdAndDrivingStateAndRecordedAtBetween(
+        String livreurId, String drivingState,
+        LocalDateTime start, LocalDateTime end);
+
+    /** Compter jours distincts de connexion d'un livreur depuis une date */
+    @Query("SELECT COUNT(DISTINCT FUNCTION('DATE', p.recordedAt)) " +
+           "FROM Position p " +
+           "WHERE p.livreurId = :livreurId " +
+           "AND p.recordedAt >= :since")
+    long countDistinctDaysByLivreurIdAfter(
+        @Param("livreurId") String livreurId,
+        @Param("since") LocalDateTime since);
 }
