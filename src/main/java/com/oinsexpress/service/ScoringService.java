@@ -28,10 +28,9 @@ public class ScoringService {
     private final AlertRepository          alertRepository;
     private final ClientFeedbackRepository feedbackRepository;
 
-    private static final double POIDS_CONDUITE = 0.35;
-    private static final double POIDS_AVIS     = 0.35;
-    private static final double POIDS_PRESENCE = 0.20;
-    private static final double POIDS_ALERTES  = 0.10;
+    private static final double POIDS_CONDUITE = 0.40;
+    private static final double POIDS_PRESENCE = 0.30;
+    private static final double POIDS_ALERTES  = 0.30;
 
     public List<LivreurScoreDto> getClassement(UUID bossId, int mois) {
         List<User> livreurs = userRepository.findByBossId(bossId);
@@ -40,10 +39,14 @@ public class ScoringService {
         LocalDateTime depuis        = LocalDateTime.now().minusMonths(mois);
         LocalDateTime semainePassee = LocalDateTime.now().minusWeeks(1);
 
+        // Moyenne globale des avis (partagée entre tous les livreurs)
+        Double moyenneGlobale = feedbackRepository.avgRatingGlobal(depuis);
+        double moyenneAvis = moyenneGlobale != null ? moyenneGlobale : 3.0;
+
         List<LivreurScoreDto> scores = new ArrayList<>();
         for (User livreur : livreurs) {
             if (!"LIVREUR".equals(livreur.getRole().name())) continue;
-            scores.add(calculerScore(livreur, depuis, semainePassee));
+            scores.add(calculerScore(livreur, depuis, semainePassee, moyenneAvis));
         }
 
         scores.sort(Comparator.comparingDouble(LivreurScoreDto::getScoreFinal).reversed());
@@ -54,10 +57,11 @@ public class ScoringService {
 
     private LivreurScoreDto calculerScore(User livreur,
                                           LocalDateTime depuis,
-                                          LocalDateTime semainePassee) {
+                                          LocalDateTime semainePassee,
+                                          double moyenneAvis) {
         String lid = livreur.getLivreurId();
 
-        // ── 1. Score conduite ── ✅ utilise DrivingState enum
+        // ── 1. Score conduite ── ✅ DrivingState enum
         long totalPos  = countPositions(lid, depuis);
         long normalPos = countPositionsByState(lid, depuis, DrivingState.NORMAL);
         long riskyPos  = countPositionsByState(lid, depuis, DrivingState.RISKY);
@@ -69,14 +73,7 @@ public class ScoringService {
             scoreConduite = (pts / totalPos) * 100.0;
         }
 
-        // ── 2. Score avis ──
-        double moyenneAvis = getMoyenneAvis(lid, depuis);
-        long   nombreAvis  = getNombreAvis(lid, depuis);
-        double scoreAvis   = nombreAvis > 0
-            ? ((moyenneAvis - 1.0) / 4.0) * 100.0
-            : 50.0;
-
-        // ── 3. Score présence ──
+        // ── 2. Score présence ──
         long joursConnecte = getJoursConnecte(lid, depuis);
         long joursTotal = java.time.temporal.ChronoUnit.DAYS.between(
             livreur.getCreatedAt().toLocalDate(),
@@ -87,13 +84,12 @@ public class ScoringService {
             ? Math.min((double) joursConnecte / joursTravail * 100.0, 100.0)
             : 50.0;
 
-        // ── 4. Score alertes (inverse) ──
+        // ── 3. Score alertes (inverse) ──
         long   nombreAlertes = getNombreAlertes(lid, depuis);
         double scoreAlertes  = Math.max(0.0, 100.0 - (nombreAlertes * 10.0));
 
         // ── Score final ──
         double scoreFinal = scoreConduite * POIDS_CONDUITE
-                          + scoreAvis     * POIDS_AVIS
                           + scorePresence * POIDS_PRESENCE
                           + scoreAlertes  * POIDS_ALERTES;
         scoreFinal = Math.round(scoreFinal * 10.0) / 10.0;
@@ -112,6 +108,10 @@ public class ScoringService {
         else if (scoreFinal >= 65) { badge = "BON";         badgeColor = "#3B82F6"; }
         else if (scoreFinal >= 50) { badge = "MOYEN";       badgeColor = "#F59E0B"; }
         else                       { badge = "A AMELIORER"; badgeColor = "#EF4444"; }
+
+        // Score avis = moyenne globale convertie en 0-100
+        double scoreAvis = ((moyenneAvis - 1.0) / 4.0) * 100.0;
+        long nombreAvis  = feedbackRepository.countByCreatedAtAfter(depuis);
 
         return LivreurScoreDto.builder()
             .livreurId(lid)
@@ -137,7 +137,6 @@ public class ScoringService {
             .build();
     }
 
-    // ── Score simplifié pour comparaison ── ✅ DrivingState enum
     private double calculerScoreSimple(String lid, LocalDateTime debut, LocalDateTime fin) {
         try {
             long total  = positionRepository.countByLivreurIdAndRecordedAtBetween(lid, debut, fin);
@@ -147,7 +146,6 @@ public class ScoringService {
         } catch (Exception e) { return 50.0; }
     }
 
-    // ── Helpers ──
     private long countPositions(String lid, LocalDateTime depuis) {
         try { return positionRepository.countByLivreurIdAndRecordedAtAfter(lid, depuis); }
         catch (Exception e) { return 0L; }
@@ -156,17 +154,6 @@ public class ScoringService {
     private long countPositionsByState(String lid, LocalDateTime depuis, DrivingState state) {
         try { return positionRepository
                 .countByLivreurIdAndDrivingStateAndRecordedAtAfter(lid, state, depuis); }
-        catch (Exception e) { return 0L; }
-    }
-
-    private double getMoyenneAvis(String lid, LocalDateTime depuis) {
-        try { Double avg = feedbackRepository.avgRatingByLivreurId(lid, depuis);
-              return avg != null ? avg : 0.0; }
-        catch (Exception e) { return 0.0; }
-    }
-
-    private long getNombreAvis(String lid, LocalDateTime depuis) {
-        try { return feedbackRepository.countByLivreurIdAndCreatedAtAfter(lid, depuis); }
         catch (Exception e) { return 0L; }
     }
 

@@ -17,17 +17,15 @@ public interface ClientFeedbackRepository extends JpaRepository<ClientFeedback, 
     List<ClientFeedback> findByPackageId(String packageId);
 
     // ═══════════════════════════════════════════════════════════
-    // SCORING IA — Méthodes ajoutées
+    // SCORING IA — pas de livreurId dans ClientFeedback
+    // On utilise la moyenne globale de tous les avis
     // ═══════════════════════════════════════════════════════════
 
-    /** Moyenne des notes d'un livreur depuis une date */
+    /** Moyenne globale des notes depuis une date */
     @Query("SELECT AVG(f.rating) FROM ClientFeedback f " +
-           "WHERE f.livreurId = :livreurId " +
-           "AND f.createdAt >= :since")
-    Double avgRatingByLivreurId(
-        @Param("livreurId") String livreurId,
-        @Param("since") LocalDateTime since);
+           "WHERE f.createdAt >= :since")
+    Double avgRatingGlobal(@Param("since") LocalDateTime since);
 
-    /** Compter avis d'un livreur depuis une date */
-    long countByLivreurIdAndCreatedAtAfter(String livreurId, LocalDateTime since);
+    /** Compter tous les avis depuis une date */
+    long countByCreatedAtAfter(LocalDateTime since);
 }
