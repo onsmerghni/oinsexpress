@@ -31,6 +31,12 @@ public class GlobalExceptionHandler {
             .body(MessageResponse.builder().message(ex.getMessage()).build());
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<MessageResponse> handleForbidden(ForbiddenException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(MessageResponse.builder().message(ex.getMessage()).build());
+    }
+
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<MessageResponse> handleNotFound(NotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

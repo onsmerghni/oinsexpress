@@ -5,6 +5,7 @@ import com.oinsexpress.dto.UserDto;
 import com.oinsexpress.entity.User;
 import com.oinsexpress.exception.BadRequestException;
 import com.oinsexpress.exception.ConflictException;
+import com.oinsexpress.exception.ForbiddenException;
 import com.oinsexpress.exception.UnauthorizedException;
 import com.oinsexpress.repository.UserRepository;
 import com.oinsexpress.security.JwtService;
@@ -74,7 +75,7 @@ public class AuthService {
         }
 
         if (!user.isEmailVerified()) {
-            throw new UnauthorizedException("Email non vérifié");
+            throw new ForbiddenException("Email non vérifié");
         }
 
         // Compte désactivé par le boss → accès refusé

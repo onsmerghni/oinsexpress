@@ -1,37 +1,43 @@
 package com.oinsexpress.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.List;
+import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class EmailService {
 
-    private final JavaMailSender mailSender;
-
     @Value("${oinsexpress.mail.from}")
     private String fromEmail;
+
+    @Value("${oinsexpress.brevo.api-key:}")
+    private String brevoApiKey;
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    private static final String BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
     @Async
     public void sendVerificationCode(String to, String firstName, String code) {
         String subject = "OINSExpress — Code de vérification";
         String body = String.format("""
             Bonjour %s,
-            
+
             Bienvenue sur OINSExpress !
-            
+
             Votre code de vérification est : %s
-            
+
             Ce code est valable pendant 15 minutes.
-            
+
             Si vous n'avez pas créé de compte, ignorez ce message.
-            
+
             ---
             L'équipe OINSExpress
             PFA 2026 — FST
@@ -45,15 +51,15 @@ public class EmailService {
         String subject = "OINSExpress — Réinitialisation du mot de passe";
         String body = String.format("""
             Bonjour %s,
-            
+
             Vous avez demandé une réinitialisation de mot de passe.
-            
+
             Votre code est : %s
-            
+
             Ce code est valable pendant 15 minutes.
-            
+
             Si vous n'avez pas fait cette demande, ignorez ce message.
-            
+
             ---
             L'équipe OINSExpress
             """, firstName, code);
@@ -62,18 +68,36 @@ public class EmailService {
     }
 
     private void sendEmail(String to, String subject, String body) {
+        if (brevoApiKey == null || brevoApiKey.isBlank()) {
+            log.warn("📧 BREVO_API_KEY non configurée — email non envoyé à {}", to);
+            log.warn("📧 CONTENU EMAIL (DEV FALLBACK) destinataire={} :\n{}", to, body);
+            return;
+        }
+
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
-            message.setTo(to);
-            message.setSubject(subject);
-            message.setText(body);
-            mailSender.send(message);
-            log.info("Email envoyé à {}", to);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("api-key", brevoApiKey);
+
+            Map<String, Object> payload = Map.of(
+                "sender",  Map.of("name", "OINSExpress", "email", fromEmail),
+                "to",      List.of(Map.of("email", to)),
+                "subject", subject,
+                "textContent", body
+            );
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(BREVO_API_URL, request, String.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                log.info("✅ Email envoyé via API Brevo à {}", to);
+            } else {
+                log.error("❌ Brevo API — réponse inattendue {} pour {}", response.getStatusCode(), to);
+            }
+
         } catch (Exception e) {
-            log.error("Erreur envoi email à {} : {}", to, e.getMessage());
-            // En dev, on log le code pour que le développeur puisse tester sans SMTP
-            log.warn("CODE EMAIL (DEV) : {}", body);
+            log.error("❌ Erreur Brevo API — impossible d'envoyer l'email à {} : {}", to, e.getMessage(), e);
+            log.warn("📧 CONTENU EMAIL (DEV FALLBACK) destinataire={} :\n{}", to, body);
         }
     }
 }
