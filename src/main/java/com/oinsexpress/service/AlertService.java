@@ -46,6 +46,35 @@ public class AlertService {
         broadcast(alert);
     }
 
+    /**
+     * Alerte conduite dangereuse (RISKY ou AGGRESSIVE) — déclenchée par Flask IA
+     */
+    @Transactional
+    public void createDrivingStateAlert(String livreurId, double lat, double lon,
+                                        String state) {
+        String livreurName = userRepository.findByLivreurId(livreurId)
+            .map(u -> u.getFirstName() + " " + u.getLastName())
+            .orElse(livreurId);
+
+        boolean isAggressive = "AGGRESSIVE".equals(state);
+
+        Alert alert = Alert.builder()
+            .livreurId(livreurId)
+            .livreurName(livreurName)
+            .type(AlertType.AGGRESSIVE_DRIVING)
+            .message(isAggressive
+                ? "Conduite agressive détectée — intervention requise"
+                : "Conduite risquée détectée — vigilance recommandée")
+            .latitude(lat)
+            .longitude(lon)
+            .severity(isAggressive ? AlertSeverity.HIGH : AlertSeverity.MEDIUM)
+            .build();
+
+        alertRepository.save(alert);
+        broadcast(alert);
+        log.info("[AlertService] Alerte {} créée pour livreur {}", state, livreurId);
+    }
+
     @Transactional
     public void createStationaryAlert(String livreurId, double lat, double lon) {
         String livreurName = userRepository.findByLivreurId(livreurId)

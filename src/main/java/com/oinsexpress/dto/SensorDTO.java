@@ -32,6 +32,10 @@ public class SensorDTO {
     /* ── Identifiant livreur ── */
     private String livreurId;
 
+    /* ── Position GPS (optionnelle) ── */
+    private Double latitude;
+    private Double longitude;
+
     /* ════════════════════════════
      *  Getters & Setters
      * ════════════════════════════ */
@@ -56,4 +60,10 @@ public class SensorDTO {
 
     public String getLivreurId() { return livreurId; }
     public void setLivreurId(String livreurId) { this.livreurId = livreurId; }
+
+    public Double getLatitude()  { return latitude; }
+    public void setLatitude(Double latitude)   { this.latitude  = latitude; }
+
+    public Double getLongitude() { return longitude; }
+    public void setLongitude(Double longitude) { this.longitude = longitude; }
 }
