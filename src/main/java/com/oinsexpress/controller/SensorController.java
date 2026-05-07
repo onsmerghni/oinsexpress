@@ -20,7 +20,7 @@ import java.util.Map;
  *   ESP32 → POST /api/sensor/data
  *         → MLService → Flask IA /predict
  *         → sauvegarde Position (avec drivingState)
- *         → alerte si RISKY ou AGGRESSIVE
+ *         → alerte uniquement si AGGRESSIVE
  *
  * PFA 2026 — ISTIC | Mrabet Islem & Merghni Ons
  */
@@ -74,8 +74,8 @@ public class SensorController {
                 .build()
         );
 
-        // ── 3. Alerte si conduite dangereuse ──
-        if (state == DrivingState.AGGRESSIVE || state == DrivingState.RISKY) {
+        // ── 3. Alerte uniquement si conduite AGRESSIVE (pas RISKY) ──
+        if (state == DrivingState.AGGRESSIVE) {
             alertService.createDrivingStateAlert(livreurId, lat, lon, state.name());
         }
 
